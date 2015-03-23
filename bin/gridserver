@@ -1,0 +1,172 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+
+import bottle
+import os
+from radiant.grid.backend import GridBackend, DatabaseError
+
+app = bottle.default_app()
+
+
+###############################################################################
+# Configuration
+
+app.config.setdefault('server.host', '127.0.0.1')
+app.config.setdefault('server.port', 8080)
+app.config.setdefault('server.debug', 'False')
+app.config.setdefault('db.directory', '~')
+app.config.setdefault('query.count', 20)
+app.config.load_config(os.path.expanduser('~/.config/radiant/grid_server.conf'))
+app.config['db.directory'] = os.path.expanduser(app.config['db.directory'])
+app.config['server.debug'] = (app.config['server.debug'] == 'True')
+app.config['query.count'] = int(app.config['query.count'])
+
+print("Using DB directory " + app.config['db.directory'])
+print("Using server interface " + app.config['server.host'])
+print("Using server port " + str(app.config['server.port']))
+
+# Setting up the database
+backend = GridBackend(directory=app.config['db.directory'])
+
+
+###############################################################################
+# Workspace
+
+
+@app.post('/workspace/:workspace')
+def create_workspace(workspace):
+    try:
+        backend.create_workspace(workspace)
+    except ValueError as e:
+        raise bottle.HTTPError(400, 'Bad workspace name', e)  # Bad request
+    except DatabaseError as e:
+        raise bottle.HTTPError(409, e.message, e, e.traceback)  # Conflict
+    return bottle.HTTPResponse(status=201)  # Created
+
+
+@app.get('/workspace')
+def get_workspaces():
+    try:
+        return backend.get_workspaces()
+    except DatabaseError as e:
+        raise bottle.HTTPError(500, e.message, e, e.traceback)  # Server Error
+        
+
+@app.get('/workspace/:workspace')
+def get_workspace(workspace):
+    try:
+        return backend.get_workspace(workspace)
+    except ValueError as e:
+        raise bottle.HTTPError(400, 'Bad workspace name', e)  # Bad request
+    except DatabaseError as e:
+        raise bottle.HTTPError(404, e.message, e, e.traceback)  # Not Found
+
+
+###############################################################################
+# Document
+
+
+@app.post('/workspace/:workspace/document')
+def create_document(workspace):
+    try:
+        backend.create_document(workspace, bottle.request.json)
+    except ValueError as e:
+        raise bottle.HTTPError(400, 'Bad data', e)  # Bad request
+    except AssertionError as e:
+        raise bottle.HTTPError(400, 'Malformed document', e)  # Bad request
+    except DatabaseError as e:
+        raise bottle.HTTPError(409, e.message, e, e.traceback)  # Conflict
+    return bottle.HTTPResponse(status=201)  # Created
+
+
+@app.get('/workspace/:workspace/document')
+def get_documents(workspace):
+    try:
+        return backend.get_documents_in_workspace(workspace)
+    except ValueError as e:
+        raise bottle.HTTPError(400, 'Bad data', e)  # Bad request
+    except DatabaseError as e:
+        raise bottle.HTTPError(404, e.message, e, e.traceback)  # Not exist
+
+
+@app.get('/workspace/:workspace/document/:document')
+def get_document(workspace, document):
+    try:
+        return backend.get_document(workspace, document)
+    except ValueError as e:
+        raise bottle.HTTPError(400, 'Bad data', e)  # Bad request
+    except DatabaseError as e:
+        raise bottle.HTTPError(404, e.message, e, e.traceback)  # Not exist
+
+
+@app.delete('/workspace/:workspace/document/:document')
+def delete_document(workspace, document):
+    try:
+        backend.delete_document(workspace, document)
+    except ValueError as e:
+        raise bottle.HTTPError(400, 'Bad data', e)  # Bad request
+    except DatabaseError as e:
+        raise bottle.HTTPError(409, e.message, e, e.traceback)  # Conflict
+    return bottle.HTTPResponse(status=204)  # No Content (deleted)
+
+
+###############################################################################
+# Data
+
+
+@app.put('/workspace/:workspace/document/:document/data')
+def edit_rows(workspace, document):
+    data = bottle.request.json
+    if data.get('data-type') == 'grid/instruction/feed':
+        f = backend.edit_rows
+    elif data.get('data-type') == 'grid/instruction/entry':
+        f = backend.edit_row
+    else:
+        raise bottle.HTTPError(416, 'Unsupported data-type')
+
+    try:
+        return bottle.HTTPResponse(
+            status=200,
+            body=f(workspace, document, data)
+        )
+    except ValueError as e:
+        raise bottle.HTTPError(400, 'Bad data', e)  # Bad request
+
+
+@app.get('/workspace/:workspace/document/:document/data')
+def get_rows(workspace, document):
+    start = bottle.request.query.get('start', 0)
+    count = bottle.request.query.get('count', app.config['query.count'])
+
+    try:
+        return bottle.HTTPResponse(
+            status=200,
+            body=backend.get_rows(workspace, document, start, count)
+        )
+    finally:
+        pass
+
+@app.delete('/workspace/:workspace/document/:document/data')
+def clear_rows(workspace, document):
+    data = {
+        'data-type': 'grid/instruction/entry',
+        'mode': 'delete',
+    }
+
+    try:
+        return bottle.HTTPResponse(
+            status=200,
+            body=backend.edit_row(workspace, document, data)
+        )
+    except ValueError as e:
+        raise bottle.HTTPError(400, 'Bad data', e)  # Bad request
+    
+
+###############################################################################
+# Main
+
+
+if __name__ == '__main__':
+    bottle.debug(app.config['server.debug'])
+    bottle.run(app, host=app.config['server.host'], port=app.config['server.port'])
