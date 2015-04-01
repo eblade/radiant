@@ -16,20 +16,82 @@ class GridApplication(ttk.Frame):
 
         # Set up Workspace
         self.workspace = Workspace(
-            server="localhost:8080",
-            token="ABCDE",
+            directory="/tmp",
             workspace="test",
         )
         
-        # Set up Views
+        # Load the main view
         self.views = []
         self.current_view = None
-        self.create_view("View")
+        self.load_view("main")
+
+        # Create Menus
+        self.menu = tk.Menu(self.parent)
+
+        # Workspace Menu
+        workspace_menu = tk.Menu(self.menu, tearoff=False)
+        workspace_menu.add_command(
+            label="Select Workspace..",
+            command=None,
+            underline=8,
+        )
+        workspace_menu.add_separator()
+        workspace_menu.add_command(
+            label="Quit",
+            command=self.quit,
+            underline=0,
+            accelerator="Ctrl+Q"
+        )
+        self.bind_all("<Control-q>", self.on_quit)
+        self.menu.add_cascade(
+            label="Workspace",
+            menu=workspace_menu,
+            underline=0
+        )
+
+        # View Menu
+        view_menu = tk.Menu(self.menu, tearoff=False)
+        view_menu.add_command(
+            label="Save View",
+            command=self.on_save_view,
+            underline=0,
+            accelerator="Ctrl+S"
+        )
+        self.bind_all("<Control-s>", self.on_save_view)
+        self.menu.add_cascade(
+            label="View",
+            menu=view_menu,
+            underline=0
+        )
+
+        # Item Menu
+        item_menu = tk.Menu(self.menu, tearoff=False)
+        item_menu.add_command(
+            label="Create Label",
+            command=self.on_create_label,
+            underline=7,
+            accelerator="Ctrl+L"
+        )
+        self.bind_all("<Control-l>", self.on_create_label)
+        item_menu.add_command(
+            label="Create Table",
+            command=self.on_create_table,
+            underline=7,
+            accelerator="Ctrl+T"
+        )
+        self.bind_all("<Control-t>", self.on_create_table)
+        self.menu.add_cascade(
+            label="Item",
+            menu=item_menu,
+            underline=0
+        )
+
+        self.parent.config(menu=self.menu)
 
         self.parent.protocol('WM_DELETE_WINDOW', self.quit)
 
     def create_menu(self, *menus):
-        self.menu=ttk.Menu(self.parent)
+        self.menu=tk.Menu(self.parent)
         
         for menu_data in menus:
             widget = self._create_menu(self.menu, menu_data.get('items'))
@@ -42,16 +104,30 @@ class GridApplication(ttk.Frame):
         self.parent.config(menu=self.menu)
 
     def _create_menu(self, menu, items):
-        widget = ttk.Menu(menu, tearoff=0)
+        widget = tk.Menu(menu, tearoff=0)
         for item in items:
             if item.get('title') == 'sep':
-                var.add_separator()
+                widget.add_separator()
             else:
-                command=item.get('cmd')
-                var.add_command(label=item.get('title'), command=command)
+                widget.add_command(**item)
         return widget
 
-    def create_view(self, title):
-        view = View(self, title)
+    def load_view(self, name):
+        view = View(self, name)
         self.views.append(view)
         self.current_view = view
+
+    # Menu events
+
+    def on_quit(self, *args):
+        self.quit()
+
+    def on_save_view(self, *args):
+        self.current_view.on_save_view()
+
+    def on_create_label(self, *args):
+        self.current_view.on_create_label()
+
+    def on_create_table(self, *args):
+        self.current_view.on_create_table()
+

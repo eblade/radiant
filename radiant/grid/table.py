@@ -9,11 +9,11 @@ class Table(Item):
     A table that allows displaying and editing of data.
     """
     title = TkProperty(
-        "Table", "title_label", "text", None)
+        "Table", "title", "title_label", "text", None)
     title_font = TkProperty(
-        "Table", "title_label", "font", ("Helvetica", 8))
+        "Table", "title_font", "title_label", "font", ("Helvetica", 8))
     title_color = TkProperty(
-        "Table", "title_label", "fill", "black")
+        "Table", "title_color", "title_label", "fill", "black")
     source = MethodProperty(
         "Table", "source", None)
 

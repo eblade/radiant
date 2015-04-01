@@ -6,9 +6,10 @@ from ..tk import tk, ttk
 class TkProperty(object):
     _defaults = {}
 
-    def __init__(self, klass, name, tkoption, default=None):
+    def __init__(self, klass, name, item, tkoption, default=None):
         self.k = klass
         self.name = name
+        self.item = item
         self.tkoption = tkoption
         self.default = default
 
@@ -21,28 +22,30 @@ class TkProperty(object):
         else:
             d = self._defaults[self.k]
 
-        if not name in d.keys():
+        if not item in d.keys():
             dd = {}
-            d[name] = dd
+            d[item] = dd
         else:
-            dd = d[name]
+            dd = d[item]
 
         dd[tkoption] = default
         
     def __get__(self, obj, objtype):
-        return obj._tkdict.get(self.name, {}).get(self.tkoption, self.default)
+        return obj._tkdict.get(self.item, {}).get(self.tkoption, self.default)
 
     def __set__(self, obj, value):
-        if not self.name in obj._tkdict.keys():
+        obj._properties[self.name] = value
+
+        if not self.item in obj._tkdict.keys():
             d = {}
-            obj._tkdict[self.name] = d
+            obj._tkdict[self.item] = d
         else:
-            d = obj._tkdict[self.name]
+            d = obj._tkdict[self.item]
         
         d[self.tkoption] = value
 
         if obj._created:
-            tkindex = getattr(obj, self.name)
+            tkindex = getattr(obj, self.item)
             obj._view.canvas.itemconfig(tkindex, **{self.tkoption: value})
 
     @classmethod
@@ -215,7 +218,17 @@ class Item(object):
         self._view.canvas.coords(self._handle_index, self._handle_coords(x, y))
         self._handle_position = (x, y)
 
+    def move(self, dx, dy):
+        x, y = self._position
+        x, y = self._view.snap((x + dx, y + dy))
+        self._position = (x, y)
+        self._view.canvas.move(self._assembly_tag, dx, dy)
+        self._view.canvas.coords(self._handle_index, self._handle_coords(x, y))
+
     def on_edit(self, *args):
+        pass
+
+    def on_edit_text(self, *args):
         pass
 
     def activate_options(self):
@@ -232,9 +245,9 @@ class Item(object):
         
     def to_dict(self):
         return {
-            "class": self.__class__.__name__,
+            "data-type": "grid/item/entry",
+            "item-type": self.__class__.__name__,
             "name": self._name,
-            "tkoptions": self._tkdict,
             "properties": self._properties,
             "position": self._position,
         }

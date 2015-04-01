@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-from ..tk import tk, ttk
-from .item import Label, Table
+from ..tk import tk, ttk, Dialog
+from .item import ItemType, Label, Table
 from .scope import Scope
+from .backend.definition import ViewDefinition, ItemDefinition
 
 PADDING_X=10
 PADDING_Y=10
@@ -10,11 +11,12 @@ GRID_SIZE=25
 
 
 class View(ttk.Frame):
-    def __init__(self, parent, title):
+    def __init__(self, parent, name):
         ttk.Frame.__init__(self, parent)
         self.parent=parent
-        self.title = tk.StringVar()
-        self.title.set(title)
+        self.workspace = parent.workspace
+        self.name = name
+        self.original_name = name
         self.pack(fill=tk.BOTH, expand=1)
         self.grid_size = GRID_SIZE
         self.padding = (PADDING_X, PADDING_Y)
@@ -33,51 +35,53 @@ class View(ttk.Frame):
         # Placing Canvas
         self.canvas.place(x=0, y=0)
 
-        # Declare object and variable dicts
-        self.scope = Scope()
-        self.scope.define('title', value='untitled')
+        # Declare object and title variable
+        self.workspace.scope.define(self.name + '.title', value='untitled')
         self.items = {}
-        self.variables = {}
         self._selected_name = None
 
-        # Title Label
-        self.add_item("title", Label, self.padding,
-            font=("Helvetica", 16),
-            color="#aaa",
-            show_title=False,
-            editable=True,
-            variable="title"
-        )
-
-        # Test
-        self.add_item("test1", Label, (10, 110),
-            font=("Helvetica", 26),
-            color="red",
-            title="Another title",
-            text="Another text",
-        )
-        self.add_item("test2", Label, (10, 210),
-            font=("Helvetica", 26),
-            color="green",
-        )
-        self.add_item("test3", Label, (10, 310),
-            font=("Helvetica", 72),
-            color="blue",
-            width=0,
-            editable=True,
-            variable="title",
-        )
-        self.add_item("test_table", Table, (220, 35))
-
-        self.items['test2'].text = 'Green'
-        self.items['test3'].text = 'Large Blue'
+        # Load the View Definition from the Database
+        self.from_definition(self.parent.workspace.adapter.get_view(name))
 
         # Key bindings
         self.canvas.bind("<F2>", self.on_edit_text)
+        self.canvas.bind("<F3>", self.on_edit)
+        self.canvas.bind("<Down>", self.on_down)
+        self.canvas.bind("<Up>", self.on_up)
+        self.canvas.bind("<Left>", self.on_left)
+        self.canvas.bind("<Right>", self.on_right)
         self.canvas.focus_set()
 
+    def from_definition(self, definition):
+        # Load View from a ViewDefinition
+        self.name = self.original_name = definition.name
+        for item in definition.items.values():
+            self.add_item(
+                item.name,
+                ItemType(item.item_type),
+                item.position,
+                **(item.properties)
+            )
+
+    def to_definition(self):
+        # Export the current view to a ViewDefinition
+        view_def = ViewDefinition()
+        view_def.name = self.name
+
+        for item in self.items.values():
+            view_def.items[item.name] = ItemDefinition(item.to_dict())
+
+        return view_def
+
+    def save_view(self):
+        # Save the view to the workspace
+        self.parent.workspace.adapter.edit_view(
+            self.original_name,
+            self.to_definition()
+        )
+
     def add_item(self, name, klass, position, **options):
-        # Create object
+        # Create item
         item = klass(self)
         item.config(**options)
         item.create(name, position)
@@ -133,4 +137,52 @@ class View(ttk.Frame):
         if item is None:
             return
 
+        item.on_edit_text()
+
+    def on_edit(self, event):
+        if self._selected_name is None:
+            return
+
+        item = self.items.get(self._selected_name)
+
+        if item is None:
+            return
+
         item.on_edit()
+
+    def on_save_view(self, *args):
+        self.save_view()
+
+    def on_create_label(self, *args):
+        d = Dialog(self, "Create Label", value="label",
+                   focus=self.canvas)
+        if not d.cancelled:
+            self.add_item(d.value, Label, self.padding)
+            self.select(d.value)
+
+    def on_create_table(self, *args):
+        d = Dialog(self, "Create Table", value="table",
+                   focus=self.canvas)
+        if not d.cancelled:
+            self.add_item(d.value, Table, self.padding)
+            self.select(d.value)
+
+    def on_down(self, event):
+        if self._selected_name is not None:
+            if event.state == 4: # Ctrl
+                self.items[self._selected_name].move(0, self.grid_size)
+
+    def on_up(self, event):
+        if self._selected_name is not None:
+            if event.state == 4: # Ctrl
+                self.items[self._selected_name].move(0, -self.grid_size)
+
+    def on_left(self, event):
+        if self._selected_name is not None:
+            if event.state == 4: # Ctrl
+                self.items[self._selected_name].move(-self.grid_size, 0)
+
+    def on_right(self, event):
+        if self._selected_name is not None:
+            if event.state == 4: # Ctrl
+                self.items[self._selected_name].move(self.grid_size, 0)

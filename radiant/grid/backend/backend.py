@@ -42,15 +42,15 @@ class GridBackend(object):
                       )
             db.execute("CREATE TABLE _grid_vars (" +
                        "name TEXT(128) PRIMARY KEY, " +
-                       "scope TEXT(128), " +
                        "create_ts INTEGER DEFAULT (strftime('%s', 'now')), " +
                        "update_ts INTEGER DEFAULT (strftime('%s', 'now')), " +
+                       "type TEXT(32) DEFAULT ('str'), " +
                        "value TEXT(2048))"
                       )
             db.execute("CREATE TABLE _grid_tokens (" +
                        "has TEXT(128) PRIMARY KEY, " +
                        "gets TEXT(128), " +
-                       "expires INTEGER))"
+                       "expires INTEGER)"
                       )
             db.commit()
         except OperationalError as e:
@@ -69,8 +69,7 @@ class GridBackend(object):
             workspaces.append(f[:-len(EXTENSION)])
         return {
             'data-type': 'grid/workspace/enum',
-            'count': len(workspaces),
-            'workspaces': workspaces
+            'workspace-names': workspaces
         }
 
     def get_workspace(self, workspace):
@@ -78,8 +77,116 @@ class GridBackend(object):
         return {
             'data-type': 'grid/workspace/entry',
             'name': workspace,
-            'documents-count': len(documents),
-            'documents': documents
+            'document-names': documents
+        }
+
+    def create_view(self, workspace, view):
+        name = Column.validate_name(view.get('name'))
+        assert name is not None
+
+        db = self.get_connection(workspace)
+        try:
+            db.execute("INSERT INTO _grid_views " +
+                       "(name, read_token, write_token, data_model) " +
+                       "VALUES (?, ?, ?, ?)",
+                       (name, "*", "*", json.dumps(view)))
+            db.commit()
+        except IntegrityError as e:
+            db.rollback()
+            raise DatabaseError("View exists", e, format_exc())
+        finally:
+            db.close()
+
+    def edit_view(self, workspace, view, view_model):
+        old_name = Column.validate_name(view)
+        new_name = Column.validate_name(view_model.get('name'))
+        assert old_name is not None
+        assert new_name is not None
+        
+        db = self.get_connection(workspace)
+        try:
+            db.execute("UPDATE _grid_views " +
+                       "SET name=?, update_ts=strftime('%s', 'now'), data_model=? " +
+                       "WHERE name=?",
+                       (new_name, json.dumps(view_model), old_name))
+            db.commit()
+        except IntegrityError as e:
+            db.rollback()
+            raise DatabaseError("View exists", e, format_exc())
+        finally:
+            db.close()
+
+    def get_view(self, workspace, view):
+        views = self._fetch_views(workspace, view=view)
+        if len(views) == 0:
+            raise DatabaseError("No such view")
+        data = views.pop()
+        data['data-type'] = 'grid/view/entry'
+        return data
+
+    def get_views_in_workspace(self, workspace):
+        views = self._fetch_views(workspace)
+        return {
+            'data-type': 'grid/grid/feed',
+            'workspace': workspace,
+            'entries': views,
+            'count': len(views),
+        }
+
+    def create_variable(self, workspace, variable):
+        name = Column.validate_variable_name(variable.get('name'))
+        assert name is not None
+
+        db = self.get_connection(workspace)
+        try:
+            db.execute("INSERT INTO _grid_vars " + 
+                       "(name, type, value) " +
+                       "VALUES (?, ?, ?)", 
+                       (name, variable.get('type', 'str'), variable.get('value')))
+        
+            db.commit()
+        except IntegrityError as e:
+            db.rollback()
+            raise DatabaseError("Variable exists", e, format_exc())
+        finally:
+            db.close()
+
+    def edit_variable(self, workspace, variable, data):
+        old_name = Column.validate_variable_name(variable)
+        new_name = Column.validate_variable_name(data.get('name'))
+        assert old_name is not None
+        assert new_name is not None
+        
+        db = self.get_connection(workspace)
+        try:
+            db.execute("UPDATE _grid_vars " +
+                       "SET name=?, update_ts=strftime('%s', 'now'), value=? " +
+                       "WHERE name=?",
+                       (new_name, data.get('value'), old_name))
+            db.commit()
+        except IntegrityError as e:
+            db.rollback()
+            raise DatabaseError("Variable exists", e, format_exc())
+        finally:
+            db.close()
+
+    def get_variable(self, workspace, variable):
+        name = Column.validata_variable_name(variable)
+        assert name is not None
+
+        variables = self._fetch_variables(workspace, variable=name)
+        if len(variables) == 0:
+            raise DatabaseError("No such variable")
+        variable = variables.pop()
+        return variable
+
+    def get_variables_in_workspace(self, workspace):
+        variables = self._fetch_variables(workspace)
+        return {
+            'data-type': 'grid/variable/feed',
+            'workspace': workspace,
+            'entries': variables,
+            'count': len(variables),
         }
 
     def create_document(self, workspace, document):
@@ -102,9 +209,10 @@ class GridBackend(object):
             db.execute("INSERT INTO _grid_docs " + 
                        "(name, read_token, write_token, data_model) " +
                        "VALUES (?, ?, ?, ?)", 
-                       (name, "READ", "WRITE", json.dumps(document)))
+                       (name, "*", "*", json.dumps(document)))
         
             db.execute("CREATE TABLE " + name + " (" + ', '.join(column_sql) + ')')
+            db.commit()
         except IntegrityError as e:
             db.rollback()
             raise DatabaseError("Document exists", e, format_exc())
@@ -126,8 +234,8 @@ class GridBackend(object):
         return {
             'data-type': 'grid/document/feed',
             'workspace': workspace,
-            'documents': documents,
-            'documents-count': len(documents),
+            'entries': documents,
+            'count': len(documents),
         }
 
     def delete_document(self, workspace, document):
@@ -207,6 +315,31 @@ class GridBackend(object):
 
         return instructions
 
+    def _fetch_views(self, workspace, view=None, models=True):
+        view = Column.validate_name(view)
+        db = self.get_connection(workspace)
+
+        views = []
+        column = 'data_model' if models else 'name'
+        try:
+            if view is None:
+                c = db.execute("SELECT " + column + " FROM _grid_views")
+            else:
+                c = db.execute("SELECT " + column + " FROM _grid_views WHERE name=?",
+                               (view,))
+
+            for row in c:
+                if models:
+                    views.append(json.loads(row['data_model']))
+                else:
+                    views.append(row['name'])
+
+        except OperationalError as e:
+            raise DatabaseError("Invalid database", e, format_exc())
+        finally:
+            db.close()
+        return views
+
     def _fetch_documents(self, workspace, document=None, models=True):
         document = Column.validate_name(document)
         db = self.get_connection(workspace)
@@ -224,17 +357,47 @@ class GridBackend(object):
                     documents.append(json.loads(row['data_model']))
                 else:
                     documents.append(row['name'])
+
+        except OperationalError as e:
+            raise DatabaseError("Invalid database", e, format_exc())
         finally:
             db.close()
         return documents
         
+    def _fetch_variables(self, workspace, variable=None):
+        variable = Column.validate_variable_name(variable)
+        db = self.get_connection(workspace)
+        
+        variables = []
+        column = 'name, type, update_ts, value'
+        try:
+            if variable is None:
+                c = db.execute("SELECT " + column + " FROM _grid_vars")
+            else:
+                c = db.execute("SELECT " + column + " FROM _grid_vars WHERE name=?",
+                               (variable,))
+            for row in c:
+                variables.append({
+                    "data-type": "grid/variable/entry",
+                    "name": row['name'],
+                    "type": row['type'],
+                    "update-ts": row['update_ts'],
+                    "value": row['value']
+                })
+
+        except OperationalError as e:
+            raise DatabaseError("Invalid database", e, format_exc())
+        finally:
+            db.close()
+        return variables
 
 
 class Column(object):
     cleaner = re.compile(r'[^A-Za-z0-9_]+')
+    variable_cleaner = re.compile(r'[^A-Za-z0-9_\.]+')
 
     def __init__(self, data=None):
-        self.column_name = None
+        self.name = None
         self.type_name = None
         self.type_size = None
         self.primary_key = False
@@ -247,7 +410,7 @@ class Column(object):
             self.use(data)
 
     def use(self, data):
-        self.column_name = Column.validate_name(data.get('column-name'))
+        self.name = Column.validate_name(data.get('name'))
         self.type_name = Column.validate_name(data.get('type-name'))
         self.type_size = Column.validate_int(data.get('type-size'))
         self.primary_key = Column.validate_bool(data.get('primary-key', False))
@@ -261,7 +424,7 @@ class Column(object):
         elif self.default is not None:
             self._has_default_data = True
 
-        assert self.column_name is not None
+        assert self.name is not None
         assert self.type_name is not None
         self.type_name = self.type_name.upper()
         assert self.type_name in ("INTEGER", "TEXT", "REAL", "BLOB")
@@ -276,7 +439,7 @@ class Column(object):
         return self._has_default_data
 
     def sql(self):
-        parts = [self.column_name]
+        parts = [self.name]
 
         if self.type_size is None:
             parts.append(self.type_name)
@@ -311,6 +474,15 @@ class Column(object):
         return expr
         
     @classmethod
+    def validate_variable_name(cls, expr):
+        if expr is None:
+            return None
+        cleaned = cls.variable_cleaner.sub('', expr)
+        if cleaned != expr:
+            raise ValueError("Only [A-Za-z0-9_\.] allowed in variable names")
+        return expr
+
+    @classmethod
     def validate_int(cls, expr):
         if expr is None:
             return None
@@ -334,7 +506,7 @@ class Table(object):
     def get_primary_key(self):
         for column in self.columns:
             if column.primary_key:
-                return column.column_name
+                return column.name
 
 class Instruction(object):
     def __init__(self, data):
