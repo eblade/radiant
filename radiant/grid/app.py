@@ -58,6 +58,11 @@ class GridApplication(ttk.Frame):
             accelerator="Ctrl+S"
         )
         self.bind_all("<Control-s>", self.on_save_view)
+        view_menu.add_command(
+            label="Export to PostScript",
+            command=self.on_postscript_view,
+            underline=1,
+        )
         self.menu.add_cascade(
             label="View",
             menu=view_menu,
@@ -123,7 +128,10 @@ class GridApplication(ttk.Frame):
         self.quit()
 
     def on_save_view(self, *args):
-        self.current_view.on_save_view()
+        self.current_view.on_save()
+
+    def on_postscript_view(self, *args):
+        self.current_view.on_postscript()
 
     def on_create_label(self, *args):
         self.current_view.on_create_label()

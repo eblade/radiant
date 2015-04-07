@@ -13,7 +13,7 @@ class Label(Item):
     color = TkProperty(
         "Label", "color", "value_label", "fill", "black")
     text = MethodProperty(
-        "Label", "text", None)
+        "Label", "text", None, unless="variable")
     title = TkProperty(
         "Label", "title", "title_label", "text", None)
     title_font = TkProperty(
@@ -27,7 +27,7 @@ class Label(Item):
     show_title = MethodProperty(
         "Label", "show_title", False)
     variable = MethodProperty(
-        "Label", "variable", None)
+        "Label", "variable", None, removes="text", empty=False)
     
     def __init__(self, *args, **kwargs):
         Item.__init__(self, *args, **kwargs)
@@ -43,9 +43,18 @@ class Label(Item):
         self._itemconfig("value_label", activefill=activefill)
 
     def set_variable(self, variable):
-        self._view.workspace.scope.define(variable)
-        self._view.workspace.scope.listen(self, "text", variable, self.on_text_change)
-        self.on_text_change(self._view.workspace.scope.get(variable))
+        if variable:
+            self._view.workspace.scope.define(variable)
+            self._view.workspace.scope.listen(self, "text", variable, self.on_text_change)
+            self.on_text_change(self._view.workspace.scope.get(variable))
+        else:
+            self._view.workspace.scope.nevermind(self, "text")
+            return (None,)
+
+    def by_variable(self):
+        print("self.variable: " + str(self.variable))
+        if self.variable:
+            return self._view.workspace.scope.get(self.variable)
 
     def set_show_title(self, value):
         state = tk.NORMAL if value else tk.HIDDEN
@@ -214,6 +223,8 @@ class LabelDialog(Dialog):
             pass  # for now
         if variable != self.value.variable:
             self.value.variable = variable
+        elif text != self.value.text:
+            self.value.text = text
         if editable != self.value.editable:
             self.value.editable = editable
         if show_title != self.value.show_title:
@@ -224,8 +235,6 @@ class LabelDialog(Dialog):
             self.value.title_font = title_font
         if title_color != self.value.title_color:
             self.value.title_color = title_color
-        if text != self.value.text:
-            self.value.text = text
         if font != self.value.font:
             self.value.font = font
         if color != self.value.color:

@@ -2,6 +2,7 @@
 
 from .backend.definition import ViewDefinition, ItemDefinition
 from .scope import Scope
+from .document import DocumentBinding
 
 
 class Workspace(object):
@@ -53,3 +54,7 @@ class Workspace(object):
         }
 
         self.adapter.create_view(view)
+
+    def get_document_binding(self, document_name):
+        document = self.adapter.get_document(document_name)
+        return DocumentBinding(self.adapter, document)

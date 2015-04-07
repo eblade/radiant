@@ -8,7 +8,7 @@ class Scope(object):
         self.adapter = adapter
         self._variables = {}
         self._listeners = {}
-        variables = self.adapter.get_variables_in_workspace()
+        variables = self.adapter.get_variables()
         for variable in variables.entries:
             self._variables[variable.name] = Variable.from_definition(variable)
 

@@ -2,7 +2,8 @@
 
 import os
 from ..backend import GridBackend, DatabaseError
-from ..backend.definition import Feed, ViewDefinition, VariableDefinition
+from ..backend.definition import Feed,\
+    ViewDefinition, VariableDefinition, DataDefinition
 
 class LocalAdapter(object):
     def __init__(self, directory):
@@ -54,11 +55,28 @@ class LocalAdapter(object):
         except DatabaseError:
             raise NameError("Variable does not exist")
 
-    def get_variables_in_workspace(self):
+    def get_variables(self):
         return Feed(VariableDefinition,
-            self.backend.get_variables_in_workspace(self.workspace))
+            self.backend.get_variables(self.workspace))
 
     ### DOCUMENT ### 
 
     def create_document(self, document):
         self.backend.create_document(self.workspace, document.to_dict())
+
+    def get_document(self, name):
+        try:
+            document = self.backend.get_document(self.workspace, name)
+        except DatabaseError:
+            raise NameError("Document does not exist")
+
+    def enum_documents(self):
+        return Feed(str, data_type="grid/document/enum",
+            d=self.backend.enum_documents(self.workspace))
+        
+
+    ### ROWS ###
+
+    def get_rows(self, document_name, start, count):
+        return Feed(DataDefinition,
+            self.backend.get_rows(document_name, start, count))

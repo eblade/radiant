@@ -56,10 +56,14 @@ class TkProperty(object):
 class MethodProperty(object):
     _defaults = {}
 
-    def __init__(self, klass, name, default=None):
+    def __init__(self, klass, name, default=None, unless=None,
+                 removes=None, empty=True):
         self.k = klass
         self.name = name
         self.default = default
+        self.unless = unless
+        self.removes = removes
+        self.empty = empty
 
         if default is None:
             return
@@ -73,12 +77,43 @@ class MethodProperty(object):
         d[name] = default
 
     def __get__(self, obj, objtype):
-        return obj._properties.get(self.name, self.default)
+        print("get " + self.name)
+        if self.unless is not None:
+            print("get unless is not None")
+            if obj._properties.get(self.unless) is not None:
+                print(self.name + " unless " + self.unless)
+                return getattr(obj, "by_" + self.unless)()
+        else:
+            print("get unless is None")
+            return obj._properties.get(self.name, self.default)
 
     def __set__(self, obj, value):
+        print("set_" + self.name + " to " + str(value))
         method = getattr(obj, "set_" + self.name)
-        method(value)
-        obj._properties[self.name] = value
+
+        if not self.empty and not value:
+            print("empty -> setting to None")
+            value = None
+
+        altered = method(value)
+        if altered is not None:
+            print("altered -> setting to " + str(altered[0]))
+            value = altered[0]
+
+        if self.unless is not None:
+            print("unless " + self.unless)
+            if obj._properties.get(self.unless) is not None:
+                print("unless is not None, setting")
+                obj._properties[self.name] = value
+        else:
+            obj._properties[self.name] = value
+
+        if self.removes is not None:
+            try:
+                print("removes " + self.removes)
+                del obj._properties[self.removes]
+            except KeyError:
+                pass
     
     @classmethod
     def defaults(self, k):

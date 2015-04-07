@@ -59,7 +59,7 @@ class GridBackend(object):
         finally:
             db.close()
 
-    def get_workspaces(self):
+    def enum_workspaces(self):
         workspaces = []
         for f in os.listdir(self.directory):
             if not f.endswith(EXTENSION):
@@ -108,7 +108,7 @@ class GridBackend(object):
             db.execute("UPDATE _grid_views " +
                        "SET name=?, update_ts=strftime('%s', 'now'), data_model=? " +
                        "WHERE name=?",
-                       (new_name, json.dumps(view_model), old_name))
+                       (new_name, json.dumps(view_model, indent=2), old_name))
             db.commit()
         except IntegrityError as e:
             db.rollback()
@@ -124,7 +124,7 @@ class GridBackend(object):
         data['data-type'] = 'grid/view/entry'
         return data
 
-    def get_views_in_workspace(self, workspace):
+    def get_views(self, workspace):
         views = self._fetch_views(workspace)
         return {
             'data-type': 'grid/grid/feed',
@@ -180,7 +180,7 @@ class GridBackend(object):
         variable = variables.pop()
         return variable
 
-    def get_variables_in_workspace(self, workspace):
+    def get_variables(self, workspace):
         variables = self._fetch_variables(workspace)
         return {
             'data-type': 'grid/variable/feed',
@@ -227,12 +227,21 @@ class GridBackend(object):
         data['data-type'] = 'grid/document/entry'
         return data
 
-    def get_documents_in_workspace(self, workspace):
+    def get_documents(self, workspace):
         documents = self._fetch_documents(workspace)
         if len(documents) == 0:
             raise DatabaseError("No such document")
         return {
             'data-type': 'grid/document/feed',
+            'workspace': workspace,
+            'entries': documents,
+            'count': len(documents),
+        }
+
+    def enum_documents(self, workspace):
+        documents = self._fetch_documents(workspace, models=False)
+        return {
+            'data-type': 'grid/document/enum',
             'workspace': workspace,
             'entries': documents,
             'count': len(documents),
@@ -295,10 +304,11 @@ class GridBackend(object):
 
         return {
             'data-type': 'grid/data/feed',
+            'workspace': workspace,
             'start': start,
             'count': len(rows),
             'page-size': count,
-            'rows': [{k: row[k] for k in row.keys()} for row in rows],
+            'entries': [{k: row[k] for k in row.keys()} for row in rows],
         }
 
     def _edit_rows(self, workspace, document, instructions):

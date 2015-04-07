@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from ..tk import tk, ttk, Dialog
+from ..tk import tk, ttk, Dialog, filedialog
 from .item import ItemType, Label, Table
 from .scope import Scope
 from .backend.definition import ViewDefinition, ItemDefinition
@@ -73,7 +73,7 @@ class View(ttk.Frame):
 
         return view_def
 
-    def save_view(self):
+    def save(self):
         # Save the view to the workspace
         self.parent.workspace.adapter.edit_view(
             self.original_name,
@@ -150,8 +150,18 @@ class View(ttk.Frame):
 
         item.on_edit()
 
-    def on_save_view(self, *args):
-        self.save_view()
+    def on_save(self, *args):
+        self.save()
+
+    def on_postscript(self, *args):
+        filename = filedialog.asksaveasfilename(
+            title="Export to PostScript",
+            initialdir="~/",
+            filetypes=(("PostScript", "*.ps"),),
+            defaultextension=".ps")
+        if filename is None:
+            return
+        self.canvas.postscript(file=filename, colormode="color")
 
     def on_create_label(self, *args):
         d = Dialog(self, "Create Label", value="label",

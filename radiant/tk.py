@@ -4,10 +4,12 @@ try:
     # Python 3
     import tkinter as tk
     from tkinter import ttk
+    from tkinter import filedialog
 except ImportError:
     # Python 2
     import Tkinter as tk
     import ttk
+    import tkFileDialog as filedialog
 
 
 import os
