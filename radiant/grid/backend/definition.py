@@ -263,6 +263,17 @@ class DataDefinition(object):
 
 
 class Feed(object):
+    """
+    Defines a Feed of any given entry data type. 
+
+    :cvar class entry_class: The class used for the entries in the feed
+    :cvar str data_type: [*data-type*] The feed *data-type* to use
+    :cvar str workspace: [*workspace*] The workspace of this Feed's origin
+    :cvar int start: [*start*] Paging start index
+    :cvar int count: [*start*] Paging total count
+    :cvar int page_size: [*page-size*] Paging page size
+    :cvar list entries: [*entries*] Entry of type ``entry_class``
+    """
     def __init__(self, entry_class, d=None, data_type=None):
         """
         Constructor.
